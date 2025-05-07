@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, random_split
 
 
 
-def main_train_test(pretrain_signals, pre_train_labels, data_df, embedded_size=256, kernel_size=15, dropout=0.3, pretrain_num_epochs=100, num_epochs=100, print_results = False, save_results = False, plot_results = False, seed=42, domain ='time' , exp_name=None, encoder_name='mae_encoder', pre_batch_size=128, batch_size=128, pretrain_encoder_path=None, pretrain=True):
+def main_train_test(pretrain_signals, pre_train_labels, data_df, embedded_size=256, kernel_size=15, dropout=0.3, pretrain_num_epochs=100, num_epochs=100, print_results = False, save_results = False, plot_results = False, seed=42, domain ='time' , exp_name=None, encoder_name='mae_encoder', pre_batch_size=128, batch_size=128, pretrain_encoder_path=None, pretrain=True, mask_ratio = 0.5):
 
     set_seed(seed=seed)
     print(f'-------------------------domain = {domain}')
@@ -148,7 +148,7 @@ def main_train_test(pretrain_signals, pre_train_labels, data_df, embedded_size=2
                 num_workers=4
             )
 
-            encoder_path = f"{encoder_name}_domain_{domain}_num_{len(pretrain_signals)}_batchsize_{pre_batch_size}_emb_{embedded_size}_pretrain_epochs_{pretrain_num_epochs}.pth"
+            encoder_path = f"{encoder_name}_domain_{domain}_num_{len(pretrain_signals)}_batchsize_{pre_batch_size}_emb_{embedded_size}_pretrain_epochs_{pretrain_num_epochs}_mask_ratio_{mask_ratio}.pth"
             print(f'encoder path: {encoder_path}')
             print()
         else:
@@ -180,7 +180,7 @@ def main_train_test(pretrain_signals, pre_train_labels, data_df, embedded_size=2
                 val_recon_loss = 0.0
                 for signals, _ in pretrain_train_loader:
                     signals = signals.to(device)
-                    masked_signals, mask = apply_mask(signals)
+                    masked_signals, mask = apply_mask(signals, mask_ratio=mask_ratio)
 
                     pretrain_optimizer.zero_grad()
                     recon = autoencoder(masked_signals)
@@ -199,14 +199,15 @@ def main_train_test(pretrain_signals, pre_train_labels, data_df, embedded_size=2
                 with torch.no_grad():
                     for signals, _ in pretrain_val_loader:
                         signals = signals.to(device)
+                        masked_signals, mask = apply_mask(signals, mask_ratio=mask_ratio)
 
                         if domain != 'time':
                             signal_length = signals.shape[-1]
                             _, signals = ecg_to_frequency_domain(signals)
                             signals = signals[:, :, :signal_length // 2]
 
-                        reconstructed_signal = autoencoder(signals)
-                        vl_reconst_loss = reconst_loss_fn(signals, reconstructed_signal)
+                        recon = autoencoder(masked_signals, mask_ratio=mask_ratio)
+                        vl_reconst_loss = ((recon - signals)**2 * (1 - mask)).sum() / (1 - mask).sum()  # Only penalize masked parts
                         val_recon_loss += vl_reconst_loss.item()
 
                 avg_val_reconst_loss = val_recon_loss / len(pretrain_val_loader)
@@ -418,10 +419,13 @@ def main_train_test(pretrain_signals, pre_train_labels, data_df, embedded_size=2
     return best_metrics, best_test_metrics
 
 
-def cross_val_main(pretrain_signals, pre_train_labels, data_df, print_seed_results=True, record_seed_results=True, pretrain_num_epochs=100, num_epochs=100, embedded_size=256, kernel_size=15, dropout = 0.3, domain='time', encoder_name='auto_encoder', pre_batch_size=128, batch_size=128, pretrain_encoder_path=None, pretrain=True):
+def cross_val_main(pretrain_signals, pre_train_labels, data_df, print_seed_results=True, record_seed_results=True, pretrain_num_epochs=100, num_epochs=100, embedded_size=256, kernel_size=15, dropout = 0.3, domain='time', encoder_name='auto_encoder', pre_batch_size=128, batch_size=128, pretrain_encoder_path=None, pretrain=True, mask_ratio=0.5):
 
     print(f'domain is {domain}')
     best_metrics_dict = {'epoch':[], 'test_accuracy': [], 'test_precision': [], 'test_recall': [], 'test_precision':[], 'test_recall':[], 'test_f1': [], 'test_auc': [], 'test_pr_auc':[]}
+    #seeds= [42, 123, 51, 10, 12]
+    #seeds= [42, 123, 51, 15, 12]
+    # seeds= [321, 123, 51, 15, 12, 1234, 999]
     seeds= [321, 440, 12, 1234, 999]
     for seed in seeds:
         random.seed(seed)
@@ -431,7 +435,7 @@ def cross_val_main(pretrain_signals, pre_train_labels, data_df, print_seed_resul
             torch.cuda.manual_seed(seed)
 
 
-        best_metrics, best_test_metrics = main_train_test(pretrain_signals, pre_train_labels, data_df, embedded_size=embedded_size, kernel_size=kernel_size, dropout=dropout, pretrain_num_epochs=pretrain_num_epochs, num_epochs=num_epochs, print_results = False, save_results = False, plot_results = False, seed=seed, domain =domain , exp_name=None, encoder_name=encoder_name, pre_batch_size=pre_batch_size, batch_size=batch_size, pretrain_encoder_path=pretrain_encoder_path, pretrain=pretrain)
+        best_metrics, best_test_metrics = main_train_test(pretrain_signals, pre_train_labels, data_df, embedded_size=embedded_size, kernel_size=kernel_size, dropout=dropout, pretrain_num_epochs=pretrain_num_epochs, num_epochs=num_epochs, print_results = False, save_results = False, plot_results = False, seed=seed, domain =domain , exp_name=None, encoder_name=encoder_name, pre_batch_size=pre_batch_size, batch_size=batch_size, pretrain_encoder_path=pretrain_encoder_path, pretrain=pretrain, mask_ratio=mask_ratio)
 
 
         print(f'----seed={seed} is done')
