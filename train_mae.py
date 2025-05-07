@@ -180,6 +180,12 @@ def main_train_test(pretrain_signals, pre_train_labels, data_df, embedded_size=2
                 val_recon_loss = 0.0
                 for signals, _ in pretrain_train_loader:
                     signals = signals.to(device)
+                    
+                    if domain != 'time':
+                            signal_length = signals.shape[-1]
+                            _, signals = ecg_to_frequency_domain(signals)
+                            signals = signals[:, :, :signal_length // 2]
+
                     masked_signals, mask = apply_mask(signals, mask_ratio=mask_ratio)
 
                     pretrain_optimizer.zero_grad()
@@ -199,14 +205,15 @@ def main_train_test(pretrain_signals, pre_train_labels, data_df, embedded_size=2
                 with torch.no_grad():
                     for signals, _ in pretrain_val_loader:
                         signals = signals.to(device)
-                        masked_signals, mask = apply_mask(signals, mask_ratio=mask_ratio)
-
+                        
                         if domain != 'time':
                             signal_length = signals.shape[-1]
                             _, signals = ecg_to_frequency_domain(signals)
                             signals = signals[:, :, :signal_length // 2]
 
-                        recon = autoencoder(masked_signals, mask_ratio=mask_ratio)
+                        masked_signals, mask = apply_mask(signals, mask_ratio=mask_ratio)
+
+                        recon = autoencoder(masked_signals)
                         vl_reconst_loss = ((recon - signals)**2 * (1 - mask)).sum() / (1 - mask).sum()  # Only penalize masked parts
                         val_recon_loss += vl_reconst_loss.item()
 
@@ -423,9 +430,6 @@ def cross_val_main(pretrain_signals, pre_train_labels, data_df, print_seed_resul
 
     print(f'domain is {domain}')
     best_metrics_dict = {'epoch':[], 'test_accuracy': [], 'test_precision': [], 'test_recall': [], 'test_precision':[], 'test_recall':[], 'test_f1': [], 'test_auc': [], 'test_pr_auc':[]}
-    #seeds= [42, 123, 51, 10, 12]
-    #seeds= [42, 123, 51, 15, 12]
-    # seeds= [321, 123, 51, 15, 12, 1234, 999]
     seeds= [321, 440, 12, 1234, 999]
     for seed in seeds:
         random.seed(seed)
