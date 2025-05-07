@@ -310,3 +310,11 @@ def apply_mask(x, mask_ratio=0.5, mask_size=250):
             mask[b, :, start:start+mask_size] = 0
     
     return x * mask, mask
+
+
+def vae_loss_function(recon_x, x, mu, logvar):
+    # Reconstruction loss (MSE)
+    recon_loss = F.mse_loss(recon_x, x, reduction='mean')
+    # KL divergence
+    kl_div = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+    return recon_loss + kl_div, recon_loss, kl_div
