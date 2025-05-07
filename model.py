@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 import random
 
-class ECG_Encoder(nn.Module):
+class ECG_CNN_Encoder(nn.Module):
     def __init__(self, signal_length=5000, embedded_size=256, kernel_size=15, dropout=0.1, alpha=0.1, seed=42):
         super(ECG_Encoder, self).__init__()
 
@@ -76,7 +76,7 @@ class ECG_Encoder(nn.Module):
 
 
 
-class ECG_VAE_Encoder(nn.Module):
+class ECG_CNN_VAE_Encoder(nn.Module):
     def __init__(self, signal_length=5000, embedded_size=256, kernel_size=15, dropout=0.1, alpha=0.1, seed=42):
         super(ECG_Encoder, self).__init__()
 
