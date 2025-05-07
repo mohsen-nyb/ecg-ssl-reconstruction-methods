@@ -118,7 +118,7 @@ def main_train_test(pretrain_signals, pre_train_labels, data_df, embedded_size=2
     best_val_auc = -1.0
     best_metrics = {}
         
-    encoder = ECG_Encoder(signal_length=signal_length, embedded_size=embedded_size, kernel_size=kernel_size, dropout=dropout, seed=seed).to(device)
+    encoder = ECG_CNN_Encoder(signal_length=signal_length, embedded_size=embedded_size, kernel_size=kernel_size, dropout=dropout, seed=seed).to(device)
     decoder = ECG_Decoder(encoded_size=embedded_size, output_channels=12, target_length=signal_length, seed=seed).to(device)
     autoencoder = ECG_Autoencoder(encoder, decoder).to(device)
 
