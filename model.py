@@ -14,6 +14,8 @@ class ECG_Encoder(nn.Module):
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed(seed)
+
+        self.isvae = False
         
         self.signal_length = signal_length
         padding_size = int((kernel_size - 1) / 2)
@@ -71,6 +73,82 @@ class ECG_Encoder(nn.Module):
         x = self.dropout_fc1(F.leaky_relu(self.fc1(x), negative_slope=self.alpha))
         
         return x
+
+
+
+class ECG_VAE_Encoder(nn.Module):
+    def __init__(self, signal_length=5000, embedded_size=256, kernel_size=15, dropout=0.1, alpha=0.1, seed=42):
+        super(ECG_Encoder, self).__init__()
+
+        # Set seed
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+
+        self.isvae = True
+        self.signal_length = signal_length
+        padding_size = int((kernel_size - 1) / 2)
+            
+        self.conv1 = nn.Conv1d(12, 32, kernel_size=kernel_size, stride=2, padding=padding_size)
+        self.bn1 = nn.BatchNorm1d(32)
+        self.avgpool1 = nn.AvgPool1d(kernel_size=kernel_size, stride=2)
+        
+        self.conv2 = nn.Conv1d(32, 32, kernel_size=kernel_size, stride=2, padding=padding_size)
+        self.bn2 = nn.BatchNorm1d(32)
+        self.avgpool2 = nn.AvgPool1d(kernel_size=kernel_size, stride=2) 
+        
+        self.conv3 = nn.Conv1d(32, 64, kernel_size=kernel_size, stride=2, padding=padding_size)
+        self.bn3 = nn.BatchNorm1d(64)
+        self.conv4 = nn.Conv1d(64, 64, kernel_size=kernel_size, stride=2, padding=padding_size)
+        self.bn4 = nn.BatchNorm1d(64)
+        self.conv5 = nn.Conv1d(64, 64, kernel_size=kernel_size, stride=2, padding=padding_size)
+        self.bn5 = nn.BatchNorm1d(64)
+
+        self.flatten_size = self._get_flatten_size() 
+        self.fc_mu = nn.Linear(self.flatten_size, embedded_size)
+        self.fc_logvar = nn.Linear(self.flatten_size, embedded_size)
+
+        self.alpha = alpha
+        self.dropout1 = nn.Dropout(dropout)
+        self.dropout2 = nn.Dropout(dropout)
+        self.dropout3 = nn.Dropout(dropout)
+        self.dropout4 = nn.Dropout(dropout)
+        self.dropout5 = nn.Dropout(dropout)
+        self.dropout_fc1 = nn.Dropout(dropout*2)
+
+
+    def _get_flatten_size(self):
+        """Get the size of the flattened feature map after convolutions."""
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, 12, self.signal_length)
+            x = F.leaky_relu(self.conv1(dummy_input))
+            x = F.leaky_relu(self.conv2(x))
+            x = self.avgpool1(x)  
+            x = F.leaky_relu(self.conv3(x))
+            x = self.avgpool2(x)  
+            x = F.leaky_relu(self.conv4(x))
+            x = F.leaky_relu(self.conv5(x))
+            return x.view(x.size(0), -1).size(1)
+
+    def forward(self, x):
+        x = self.dropout1(F.leaky_relu(self.bn1(self.conv1(x)), negative_slope=self.alpha))
+        x = self.dropout2(F.leaky_relu(self.bn2(self.conv2(x)), negative_slope=self.alpha))
+        x = self.avgpool1(x)
+        x = self.dropout3(F.leaky_relu(self.bn3(self.conv3(x)), negative_slope=self.alpha))
+        x = self.avgpool2(x)
+        x = self.dropout4(F.leaky_relu(self.bn4(self.conv4(x)), negative_slope=self.alpha))
+        x = self.dropout5(F.leaky_relu(self.bn5(self.conv5(x)), negative_slope=self.alpha))
+        
+        x = x.view(x.size(0), -1)
+        mu = self.fc_mu(x)
+        logvar = self.fc_logvar(x)
+        return mu, logvar
+
+
+
+
 
 
 class ECG_Decoder(nn.Module):
@@ -134,6 +212,23 @@ class ECG_Autoencoder(nn.Module):
         return reconstructed
 
 
+class ECG_VAE(nn.Module):
+    def __init__(self, encoder, decoder):
+        super(ECG_VAE, self).__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def forward(self, x):
+        mu, logvar = self.encoder(x)
+        z = self.reparameterize(mu, logvar)
+        recon = self.decoder(z)
+        return recon, mu, logvar
+
 
 class ECG_Classifier(nn.Module):
     def __init__(self, encoder, embedded_size=256, num_classes=1, dropout=0.1):
@@ -150,9 +245,15 @@ class ECG_Classifier(nn.Module):
         )
 
     def forward(self, x):
-        x = self.encoder(x)  # Get encoded features
+        if self.encoder.isvae:
+            x, _ = self.encoder(x)  # Get encoded features
+        else:
+            x = self.encoder(x)  # Get encoded features
         out = self.classifier(x)  # Classifier prediction
         return out
+
+
+
     
 
 
